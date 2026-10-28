@@ -1,7 +1,7 @@
 // Arranque del TP 06: crea las dependencias, arma la app y abre el puerto.
 // No declara rutas ni valida formularios.
 
-const { leerConfiguracion } = require("./configuracion");
+const { leerConfiguracion } = require("./config/entorno");
 const { crearServicioReservas } = require("./servicios/reservas");
 const { crearApp } = require("./app");
 
