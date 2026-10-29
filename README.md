@@ -157,8 +157,14 @@ No se pudo completar la conexión.
   Revisar MONGODB_URI, servidor, red y permisos.
 ```
 
-Resultado con Atlas en mi red: **pendiente**, se completa al ejecutar la matriz
-de la sección 7.
+**Resultado con Atlas en mi red (Windows 11, conexión hogareña):** con la
+corrección de DNS la conexión funcionó a la primera
+(`Conexión con MongoDB establecida.`) y **no hubo ningún fallo DNS** con el
+host real. Para saber si la línea era necesaria, hice además una prueba
+aparte sin `dns.setServers`, con el DNS predeterminado de la red. También
+conectó. O sea, en esta red la corrección no es imprescindible, pero la dejé
+porque es la conexión acordada en clase y no molesta. No probé otras redes,
+así que no afirmo que funcione en todas.
 
 ## 5. Mapa de archivos, esquema, modelo y colección
 
@@ -276,28 +282,76 @@ Reglas comprobadas sin conexión, con el modelo y `validate()`:
 
 ## 7. Matriz de pruebas y evidencia de persistencia
 
-> **Pendiente de ejecutar con Atlas.** Los resultados de esta sección se
-> completan con la salida real de los programas, sin inventar nada.
+Todo se ejecutó contra Atlas Free, base `reservas_salas_u7`, colección
+`reservas`, con `node --env-file=.env scripts/...`. Para los casos inválidos
+cambié en `crear-reserva.js` **un solo campo por vez**, lo ejecuté, volví a
+listar y lo restauré con `git checkout` antes del siguiente. Al terminar,
+`git status` no mostraba cambios en el programa, que quedó con el ejemplo
+válido.
 
 | Caso | Esperado | Observado | Cantidad antes → después |
 | ---- | -------- | --------- | ------------------------ |
-| Conexión válida | Confirmación y fin del proceso | pendiente | - |
-| Fallo DNS | Registrar código/operación | pendiente | - |
-| Variable vacía | Fallo de configuración, sin éxito | `ErrorDeConfiguracion: Falta MONGODB_URI en el entorno.`, salida 1 (probado sin Atlas) | - |
-| Contraseña incorrecta | Fallo de autenticación | pendiente | - |
-| Colección vacía | Cantidad 0 sin error | pendiente | - |
-| Reserva válida | Se guarda y devuelve `_id` | pendiente | pendiente |
-| Consulta desde proceso nuevo | Recupera ese `_id` | pendiente | pendiente |
-| Segunda consulta | No agrega registros | pendiente | pendiente |
-| Estudiante vacío | Rechazo | pendiente | pendiente |
-| Email sin @ | Rechazo | pendiente | pendiente |
-| Sala no permitida | Rechazo | pendiente | pendiente |
-| Turno no permitido | Rechazo | pendiente | pendiente |
-| Fecha vacía | Rechazo | pendiente | pendiente |
-| Personas 0 | Rechazo | pendiente | pendiente |
-| Personas 7 | Rechazo | pendiente | pendiente |
-| Personas 2.5 | Rechazo | pendiente | pendiente |
-| Personas texto no numérico | Rechazo de conversión | pendiente | pendiente |
+| Conexión válida | Confirmación y fin del proceso | `Conexión con MongoDB establecida.`, salida 0 | - |
+| Fallo DNS | Registrar código/operación | **No ocurrió** con el host real (ver sección 4). Con el HOST falso de la plantilla: `ENOTFOUND` en `querySrv` | - |
+| Variable vacía (`MONGODB_URI=`) | Fallo de configuración, sin éxito | `ErrorDeConfiguracion: Falta MONGODB_URI en el entorno.`, salida 1 | - |
+| Contraseña incorrecta | Fallo de autenticación | `MongoServerError`, "Atlas rechazó el usuario o la contraseña de la base.", salida 1. Después la URI válida volvió a conectar | - (no se crea nada) |
+| Colección vacía | Cantidad 0 sin error | `Reservas recuperadas: 0`, salida 0 (la base era nueva) | 0 |
+| Reserva válida | Se guarda y devuelve `_id` | `Reserva guardada en MongoDB.` `_id: 6ae28fbd8a836f930da43af4` | 0 → 1 |
+| Consulta desde proceso nuevo | Recupera ese `_id` | Aparece `6ae28fbd8a836f930da43af4`, Valentina Ríos, Sala Multimedia | 0 → 1 |
+| Segunda consulta | No agrega registros | `Reservas recuperadas: 1` | 1 → 1 |
+| Estudiante vacío (`""`) | Rechazo | `ValidationError`, campo `estudiante` (regla), salida 1 | 1 → 1 |
+| Email sin @ | Rechazo | `ValidationError`, campo `email` (regla) | 1 → 1 |
+| Sala no permitida (`Sala Este`) | Rechazo | `ValidationError`, campo `sala` (regla) | 1 → 1 |
+| Turno no permitido (`Madrugada`) | Rechazo | `ValidationError`, campo `turno` (regla) | 1 → 1 |
+| Fecha vacía (`"   "`) | Rechazo | `ValidationError`, campo `fecha` (regla) | 1 → 1 |
+| Personas 0 | Rechazo | `ValidationError`, campo `personas` (regla) | 1 → 1 |
+| Personas 7 | Rechazo | `ValidationError`, campo `personas` (regla) | 1 → 1 |
+| Personas 2.5 | Rechazo | `ValidationError`, campo `personas` (regla) | 1 → 1 |
+| Personas `"tres"` | Rechazo de conversión | `ValidationError`, campo `personas` (**no se pudo convertir**: `CastError`) | 1 → 1 |
+
+Para la contraseña incorrecta no modifiqué el `.env` real. Hice una copia
+temporal donde cambié solamente la contraseña por `claveIncorrecta123`, la
+usé con `--env-file` y la borré. No cambié la contraseña del usuario en Atlas.
+En ese momento la terminal no tenía `MONGODB_URI` definida, así que se usó el
+archivo.
+
+### Evidencia de persistencia entre procesos
+
+Cada línea es un proceso de Node distinto, que termina antes de que empiece
+el siguiente:
+
+```
+$ node --env-file=.env scripts/listar-reservas.js
+Reservas recuperadas: 0
+
+$ node --env-file=.env scripts/crear-reserva.js
+Reserva guardada en MongoDB.
+_id: 6ae28fbd8a836f930da43af4
+
+$ node --env-file=.env scripts/listar-reservas.js
+┌─────────┬────────────────────────────┬──────────────────┬───────────────────┬──────────────┬─────────┬──────────┐
+│ (index) │ id                         │ estudiante       │ sala              │ fecha        │ turno   │ personas │
+├─────────┼────────────────────────────┼──────────────────┼───────────────────┼──────────────┼─────────┼──────────┤
+│ 0       │ '6ae28fbd8a836f930da43af4' │ 'Valentina Ríos' │ 'Sala Multimedia' │ '2026-11-09' │ 'Tarde' │ 3        │
+└─────────┴────────────────────────────┴──────────────────┴───────────────────┴──────────────┴─────────┴──────────┘
+Reservas recuperadas: 1
+
+$ node --env-file=.env scripts/listar-reservas.js
+Reservas recuperadas: 1
+```
+
+El proceso que creó la reserva ya había terminado cuando otro proceso la
+encontró con el mismo `_id`. Eso es lo que demuestra que quedó guardada en
+MongoDB y no en la memoria de Node. La segunda consulta no cambia la cantidad,
+porque listar no escribe.
+
+Captura de Data Explorer en Atlas, con la base `reservas_salas_u7`, la
+colección `reservas` y el documento `6ae28fbd8a836f930da43af4`:
+
+![Data Explorer con la reserva 6ae28fbd8a836f930da43af4](docs/data-explorer.png)
+
+Solo se creó un documento. Si se corre `crear-reserva.js` otra vez, se crea
+otro con distinto `_id` y los mismos datos (ver la sección 6).
 
 ### Continuidad del sitio
 
